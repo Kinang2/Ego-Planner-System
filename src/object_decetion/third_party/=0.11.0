@@ -1,0 +1,23 @@
+Collecting lapx
+  Downloading lapx-0.9.4-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (18 kB)
+Requirement already satisfied: matplotlib in /usr/lib/python3/dist-packages (3.6.3)
+Requirement already satisfied: pandas in /home/guo/.local/lib/python3.12/site-packages (2.3.3)
+Requirement already satisfied: Pillow in /usr/lib/python3/dist-packages (10.2.0)
+Requirement already satisfied: pyyaml in /usr/lib/python3/dist-packages (6.0.1)
+Requirement already satisfied: requests in /usr/lib/python3/dist-packages (2.31.0)
+Requirement already satisfied: scipy in /usr/lib/python3/dist-packages (1.11.4)
+Collecting tqdm
+  Using cached tqdm-4.67.3-py3-none-any.whl.metadata (57 kB)
+Collecting seaborn
+  Using cached seaborn-0.13.2-py3-none-any.whl.metadata (5.4 kB)
+Requirement already satisfied: psutil in /usr/lib/python3/dist-packages (5.9.8)
+Requirement already satisfied: numpy>=1.21.6 in /home/guo/Ego-planner-stystem/src/object_decetion/venv/lib/python3.12/site-packages (from lapx) (1.26.4)
+Requirement already satisfied: python-dateutil>=2.8.2 in /usr/lib/python3/dist-packages (from pandas) (2.8.2)
+Requirement already satisfied: pytz>=2020.1 in /usr/lib/python3/dist-packages (from pandas) (2024.1)
+Requirement already satisfied: tzdata>=2022.7 in /home/guo/.local/lib/python3.12/site-packages (from pandas) (2025.3)
+Downloading lapx-0.9.4-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl (2.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.0/2.0 MB 3.1 MB/s eta 0:00:00
+Using cached tqdm-4.67.3-py3-none-any.whl (78 kB)
+Using cached seaborn-0.13.2-py3-none-any.whl (294 kB)
+Installing collected packages: tqdm, lapx, seaborn
+Successfully installed lapx-0.9.4 seaborn-0.13.2 tqdm-4.67.3

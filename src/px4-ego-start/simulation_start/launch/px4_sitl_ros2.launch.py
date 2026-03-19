@@ -53,6 +53,19 @@ def generate_launch_description():
         output='screen'
     )
 
+    #桥接彩色相机
+    imx214_bridge_node = Node(
+    package='ros_gz_bridge',
+    executable='parameter_bridge',
+    name='imx214_bridge',
+    arguments=[
+        '/world/default/model/x500_depth_0/link/camera_link/sensor/IMX214/image'
+        '@sensor_msgs/msg/Image[gz.msgs.Image',
+    ],
+    output='screen'
+    )
+
+
     # # 7. Bridge 2: 深度相机点云 (Gazebo -> ROS2)
     # depth_points_bridge_node = Node(
     #     package='ros_gz_bridge',
@@ -76,5 +89,6 @@ def generate_launch_description():
         micro_xrce_start_cmd,
         depth_bridge_node,
         # depth_points_bridge_node,
+        imx214_bridge_node,
         best_effort_depth_img_pub,
     ])
