@@ -192,38 +192,55 @@ echo "source ~/Ego-planner-stystem/install/setup.bash" >> ~/.bashrc
 
 ### 目标检测模块额外安装步骤
 
+> 虚拟环境（`venv/`）不上传 git，需要在本地通过脚本一键创建。
+
 ```bash
-# 1. 克隆 YOLOv8 源码并切换到 v8.2.0
+# 确保已 source ROS2 环境
+source /opt/ros/jazzy/setup.bash
+
+# 进入包目录，运行一键安装脚本
+cd ~/Ego-planner-stystem/src/object_decetion
+bash setup_venv.sh
+```
+
+脚本会自动完成以下步骤：
+
+- 创建 Python 虚拟环境（`--system-site-packages` 继承 ROS2 库）
+- 安装 `requirements.txt` 中的所有依赖（torch、torchvision 等）
+- 确认 numpy < 2.0（与 cv_bridge 兼容）
+- 克隆 YOLOv8 v8.2.0 源码（如 `third_party/ultralytics/` 不存在）
+- 下载 `yolov8n.pt` 预训练权重（如 `weights/` 目录为空）
+- 验证所有关键依赖是否正常
+
+**如需手动安装（不使用脚本）：**
+
+```bash
+# 1. 创建虚拟环境
+python3 -m venv ~/Ego-planner-stystem/src/object_decetion/venv \
+    --system-site-packages
+
+# 2. 激活并安装依赖
+source ~/Ego-planner-stystem/src/object_decetion/venv/bin/activate
+pip install -r ~/Ego-planner-stystem/src/object_decetion/requirements.txt
+pip install "numpy<2.0"   # 必须 <2.0，与 cv_bridge 兼容
+
+# 3. 克隆 YOLOv8 源码
 cd ~/Ego-planner-stystem/src/object_decetion/third_party
 git clone https://github.com/ultralytics/ultralytics.git
-cd ultralytics
-git checkout v8.2.0
-
-# 修复 torch 2.6+ 的 weights_only 兼容问题
+cd ultralytics && git checkout v8.2.0
+# 修复 torch 2.6+ 兼容问题
 sed -i 's/torch.load(file, map_location="cpu")/torch.load(file, map_location="cpu", weights_only=False)/g' \
-  ultralytics/nn/tasks.py
+    ultralytics/nn/tasks.py
 
-# 2. 下载预训练权重
-cd ~/Ego-planner-stystem/src/object_decetion
-mkdir -p weights
-wget -O weights/yolov8n.pt \
-  https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt
+# 4. 下载权重
+wget -O ~/Ego-planner-stystem/src/object_decetion/weights/yolov8n.pt \
+    https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt
+```
 
-# 3. 创建 Python 虚拟环境（继承系统 ROS2 库）
-python3 -m venv venv --system-site-packages
+> **注意：** 不要安装 `pip install opencv-python`，使用系统 cv2（通过 `--system-site-packages` 继承），否则会与 cv_bridge 产生 numpy 版本冲突。
 
-# 4. 激活虚拟环境并安装依赖
-source venv/bin/activate
-pip install torch torchvision
-pip install "numpy<2.0"        # 必须 <2.0，与 cv_bridge 兼容
-pip install py-cpuinfo lapx matplotlib pandas \
-            Pillow pyyaml requests scipy tqdm seaborn psutil
-# 注意：不要 pip install opencv-python，使用系统 cv2
-
-# 5. 验证环境
-python3 -c "import rclpy; import cv_bridge; import torch; print('ALL OK, torch:', torch.__version__, 'CUDA:', torch.cuda.is_available())"
-
-# 6. 编译 object_decetion 包
+```bash
+# 5. 编译 object_decetion 包
 cd ~/Ego-planner-stystem
 colcon build --packages-select object_decetion --symlink-install
 ```
@@ -528,6 +545,32 @@ colcon build --packages-select px4_offboard_control --symlink-install
 source install/setup.bash
 ```
 
+### `detector_node` 启动报 `numpy` 版本冲突
+
+**原因：** 虚拟环境里 numpy >= 2.0，与系统 cv_bridge 不兼容。
+
+```bash
+source ~/Ego-planner-stystem/src/object_decetion/venv/bin/activate
+pip install "numpy<2.0"
+# 验证
+python3 -c "import cv_bridge; import numpy as np; print('OK, numpy:', np.__version__)"
+```
+
+### `setup_venv.sh` 提示 "未检测到 ROS2 环境"
+
+```bash
+source /opt/ros/jazzy/setup.bash
+# 再运行脚本
+bash ~/Ego-planner-stystem/src/object_decetion/setup_venv.sh
+```
+
+### `detector_node` 报 `ModuleNotFoundError: No module named 'cpuinfo'`
+
+```bash
+source ~/Ego-planner-stystem/src/object_decetion/venv/bin/activate
+pip install py-cpuinfo
+```
+
 ### RViz2 不显示坐标轴 / Fixed Frame 报错
 
 **原因：** TF 树断链，`map → odom → base_link` 链路不完整。
@@ -561,7 +604,9 @@ Ego-planner-stystem/
 │   │   ├── weights/
 │   │   │   └── yolov8n.pt           # 预训练权重
 │   │   ├── datasets/                # 训练数据集目录
-│   │   └── venv/                    # 独立 Python 虚拟环境
+│   │   ├── requirements.txt         # 虚拟环境依赖清单
+│   │   ├── setup_venv.sh            # 一键创建虚拟环境脚本
+│   │   └── venv/                    # 独立 Python 虚拟环境（不上传 git）
 │   └── px4-ego-start/
 │       ├── simulation_start/        # 仿真环境启动包
 │       │   ├── launch/
