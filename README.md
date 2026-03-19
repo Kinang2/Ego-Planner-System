@@ -1,6 +1,6 @@
 # Ego-Planner-System
 
-> 基于 ROS2 + PX4 + Gazebo 的无人机自主规划与仿真系统，集成 EGO-Swarm 轨迹规划算法、深度相机感知与 Offboard 飞行控制。
+> 基于 ROS2 + PX4 + Gazebo 的无人机自主规划与仿真系统，集成 EGO-Swarm 轨迹规划算法、深度相机感知、YOLOv8 目标检测与 Offboard 飞行控制。
 
 ---
 
@@ -14,6 +14,7 @@
 - [启动流程](#启动流程)
 - [飞行控制指令](#飞行控制指令)
 - [话题说明](#话题说明)
+- [目标检测模块](#目标检测模块)
 - [常见问题排查](#常见问题排查)
 
 ---
@@ -26,36 +27,43 @@
 
 - EGO-Planner 梯度优化轨迹规划，支持动态避障
 - PX4 SITL 软件在环仿真，无需真实硬件
-- x500_depth 无人机模型，搭载深度相机
+- x500_depth 无人机模型，搭载深度相机与 IMX214 彩色相机
 - MAVROS 提供飞行模式切换、位姿控制等高级接口
 - Micro XRCE-DDS 提供 PX4 uORB 消息到 ROS2 话题的直接映射
 - 键盘实时切换飞行模式（手动 / 定点 / Offboard / 降落）
 - RViz2 可视化路径规划与点云地图
+- **YOLOv8 实时目标检测，GPU 加速推理，独立 Python 虚拟环境隔离**
 
 ---
 
 ## 系统架构
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                     ROS2 层                              │
-│                                                         │
-│  ego_planner ──→ /drone_0_planning/pos_cmd              │
-│      ↑                    ↓                             │
-│  /depth_camera_bestef   offboard_control_test           │
-│      ↑                    ↓                             │
-│  depth_gz_bridge     MAVROS / px4_msgs                  │
-└──────────────┬────────────────────┬────────────────────┘
-               │  MAVROS (MAVLink)  │  Micro XRCE-DDS
-               ↓                    ↓
-┌─────────────────────────────────────────────────────────┐
-│                    PX4 SITL                             │
-└──────────────────────────┬──────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                        ROS2 层                               │
+│                                                             │
+│  ego_planner ──→ /drone_0_planning/pos_cmd                  │
+│      ↑                    ↓                                 │
+│  /depth_camera_bestef   offboard_control_test               │
+│      ↑                    ↓                                 │
+│  depth_gz_bridge     MAVROS / px4_msgs                      │
+│                                                             │
+│  /rgb_image ──→ detector_node (venv Python)                 │
+│      ↑               ↓              ↓                       │
+│  imx214_bridge  /detection_image  /detected_objects         │
+└──────────────┬──────────────────────────┬───────────────────┘
+               │  MAVROS (MAVLink)        │  Micro XRCE-DDS
+               ↓                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│                      PX4 SITL                               │
+└──────────────────────────┬──────────────────────────────────┘
                            │ GZ Transport
-┌──────────────────────────↓──────────────────────────────┐
-│               Gazebo Harmonic (gz sim)                  │
-│           世界: ego.sdf  模型: gz_x500_depth             │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────↓──────────────────────────────────┐
+│               Gazebo Harmonic (gz sim)                      │
+│     世界: ego.sdf  模型: gz_x500_depth                       │
+│     深度相机 → /depth_camera                                  │
+│     IMX214 彩色相机 → /world/.../IMX214/image                 │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 **通信双通道说明：**
@@ -92,6 +100,20 @@
 
 EGO-Swarm 轨迹规划核心，基于梯度优化的局部避障规划器。接收目标点后生成平滑无碰轨迹，发布到 `/drone_0_planning/pos_cmd`。
 
+### `object_decetion`
+
+YOLOv8 实时目标检测包，使用 IMX214 彩色相机图像进行推理。**运行在独立 Python 虚拟环境中**，与系统 Python 环境隔离，避免依赖冲突。
+
+| 文件 | 功能 |
+|------|------|
+| `object_decetion/detector.py` | YOLOv8 推理封装，与 ROS2 无关，可单独测试 |
+| `object_decetion/detector_node.py` | ROS2 节点，订阅 `/rgb_image`，发布检测结果 |
+| `launch/detection.launch.py` | 启动 IMX214 bridge 和检测节点 |
+| `third_party/ultralytics/` | YOLOv8 v8.2.0 完整源码（含 train.py/predict.py） |
+| `weights/yolov8n.pt` | 预训练权重（COCO 80类） |
+| `venv/` | 独立 Python 虚拟环境（含 torch、torchvision） |
+| `datasets/` | 自定义训练数据集目录 |
+
 ---
 
 ## 依赖环境
@@ -115,8 +137,22 @@ sudo apt install \
   ros-jazzy-tf2-ros \
   ros-jazzy-tf2-tools \
   ros-jazzy-rviz2 \
+  ros-jazzy-vision-msgs \
   python3-cv-bridge
 ```
+
+### 目标检测依赖（虚拟环境）
+
+目标检测模块使用独立 Python 虚拟环境，**不影响系统 Python 和其他 ROS2 包**。
+
+| 组件 | 版本 | 说明 |
+|------|------|------|
+| Python venv | `--system-site-packages` | 继承系统 rclpy、cv_bridge |
+| torch | 2.10.0+cu128 | GPU 推理 |
+| torchvision | 0.25.0 | 图像处理 |
+| numpy | 1.26.4 | 与 cv_bridge 兼容（需 <2.0） |
+| YOLOv8 源码 | v8.2.0 | `third_party/ultralytics/` |
+| NVIDIA GPU | RTX 系列 | 推荐，CPU 也可运行 |
 
 ### 外部工具
 
@@ -152,6 +188,44 @@ colcon build --symlink-install
 source install/setup.bash
 # 建议加入 ~/.bashrc
 echo "source ~/Ego-planner-stystem/install/setup.bash" >> ~/.bashrc
+```
+
+### 目标检测模块额外安装步骤
+
+```bash
+# 1. 克隆 YOLOv8 源码并切换到 v8.2.0
+cd ~/Ego-planner-stystem/src/object_decetion/third_party
+git clone https://github.com/ultralytics/ultralytics.git
+cd ultralytics
+git checkout v8.2.0
+
+# 修复 torch 2.6+ 的 weights_only 兼容问题
+sed -i 's/torch.load(file, map_location="cpu")/torch.load(file, map_location="cpu", weights_only=False)/g' \
+  ultralytics/nn/tasks.py
+
+# 2. 下载预训练权重
+cd ~/Ego-planner-stystem/src/object_decetion
+mkdir -p weights
+wget -O weights/yolov8n.pt \
+  https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt
+
+# 3. 创建 Python 虚拟环境（继承系统 ROS2 库）
+python3 -m venv venv --system-site-packages
+
+# 4. 激活虚拟环境并安装依赖
+source venv/bin/activate
+pip install torch torchvision
+pip install "numpy<2.0"        # 必须 <2.0，与 cv_bridge 兼容
+pip install py-cpuinfo lapx matplotlib pandas \
+            Pillow pyyaml requests scipy tqdm seaborn psutil
+# 注意：不要 pip install opencv-python，使用系统 cv2
+
+# 5. 验证环境
+python3 -c "import rclpy; import cv_bridge; import torch; print('ALL OK, torch:', torch.__version__, 'CUDA:', torch.cuda.is_available())"
+
+# 6. 编译 object_decetion 包
+cd ~/Ego-planner-stystem
+colcon build --packages-select object_decetion --symlink-install
 ```
 
 > **注意：** 若 PX4 路径不同，请修改 `simulation_start/launch/px4_sitl_ros2.launch.py` 中的 `PX4_DIR` 变量。
@@ -225,6 +299,7 @@ ros2 launch ego_planner rviz.launch.py
 终端3: ros2 run px4_offboard_control offboard_control_test     ← 控制器
 终端4: ros2 run px4_offboard_control mode_key                  ← 键盘控制
 终端5: ros2 launch ego_planner rviz.launch.py                  ← 可视化
+终端6: ros2 launch object_decetion detection.launch.py         ← 目标检测（可选）
 ```
 
 ---
@@ -263,6 +338,7 @@ ros2 launch ego_planner rviz.launch.py
 | `/drone_0_planning/pos_cmd` | 自定义 | EGO-Planner 位置指令 |
 | `/mode_key` | `std_msgs/String` | 飞行模式切换指令 |
 | `/mavros/state` | `mavros_msgs/State` | 飞控当前状态 |
+| `/rgb_image` | `sensor_msgs/Image` | IMX214 彩色图像（目标检测输入） |
 
 ### 输出话题（发布）
 
@@ -271,10 +347,143 @@ ros2 launch ego_planner rviz.launch.py
 | `/depth_camera_bestef` | `sensor_msgs/Image` | 转换后的 32FC1 深度图 |
 | `/mavros/setpoint_position/local` | `geometry_msgs/PoseStamped` | 位置控制目标点 |
 | `/fmu/in/trajectory_setpoint` | `px4_msgs/TrajectorySetpoint` | PX4 轨迹指令 |
+| `/detection_image` | `sensor_msgs/Image` | 标注检测框的彩色图像 |
+| `/detected_objects` | `vision_msgs/Detection2DArray` | 检测结果（类别、置信度、bbox） |
 
 ---
 
-## 常见问题排查
+## 目标检测模块
+
+### 模块说明
+
+目标检测模块基于 **YOLOv8 v8.2.0 源码**实现，使用无人机搭载的 IMX214 彩色相机进行实时推理。模块运行在独立 Python 虚拟环境中，与系统 ROS2 环境完全隔离。
+
+```
+object_decetion/
+├── object_decetion/
+│   ├── detector.py        # YOLOv8 推理封装（可单独运行测试）
+│   └── detector_node.py   # ROS2 节点（虚拟环境 Python 运行）
+├── launch/
+│   └── detection.launch.py
+├── third_party/
+│   └── ultralytics/       # YOLOv8 v8.2.0 完整源码
+│       ├── ultralytics/   # 核心库（models/engine/data 等）
+│       ├── train.py       # 训练脚本
+│       └── predict.py     # 预测脚本
+├── weights/
+│   └── yolov8n.pt         # 预训练权重（COCO 80类）
+├── datasets/              # 自定义训练数据集目录
+└── venv/                  # 独立 Python 虚拟环境
+```
+
+### 启动目标检测
+
+```bash
+# 确保仿真环境已启动（终端1已运行 px4_sitl_ros2.launch.py）
+source ~/Ego-planner-stystem/install/setup.bash
+ros2 launch object_decetion detection.launch.py
+```
+
+启动后可用 rqt 查看标注图像：
+
+```bash
+rqt
+# Plugins → Visualization → Image View → 选择 /detection_image
+```
+
+### 启动参数说明
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `weights_path` | `weights/yolov8n.pt` | 权重文件路径，训练后改为自定义权重 |
+| `conf_threshold` | `0.5` | 置信度阈值，越高误检越少 |
+| `device` | `cuda:0` | 推理设备，无 GPU 改为 `cpu` |
+
+```bash
+# 示例：使用自定义权重和更高置信度阈值
+ros2 launch object_decetion detection.launch.py \
+  weights_path:=/path/to/best.pt \
+  conf_threshold:=0.7 \
+  device:=cuda:0
+```
+
+### 单独测试推理（不启动 ROS2）
+
+```bash
+source ~/Ego-planner-stystem/src/object_decetion/venv/bin/activate
+
+python3 ~/Ego-planner-stystem/src/object_decetion/object_decetion/detector.py \
+    --image /path/to/test.jpg \
+    --conf 0.5 \
+    --device cpu
+
+# 结果保存至 /tmp/yolov8_result.jpg
+```
+
+### 自定义模型训练
+
+#### 数据集准备
+
+按 YOLOv8 标准格式组织数据集：
+
+```
+datasets/my_dataset/
+├── images/
+│   ├── train/    ← 训练图像（.jpg/.png）
+│   └── val/      ← 验证图像
+├── labels/
+│   ├── train/    ← 标注文件（.txt，每行: class_id cx cy w h）
+│   └── val/
+└── data.yaml
+```
+
+`data.yaml` 示例：
+
+```yaml
+path: /home/guo/Ego-planner-stystem/src/object_decetion/datasets/my_dataset
+train: images/train
+val:   images/val
+nc: 2
+names: ['person', 'obstacle']
+```
+
+#### 训练命令
+
+```bash
+source ~/Ego-planner-stystem/src/object_decetion/venv/bin/activate
+
+cd ~/Ego-planner-stystem/src/object_decetion/third_party/ultralytics
+
+python3 train.py \
+    --data ../../datasets/my_dataset/data.yaml \
+    --model ../../weights/yolov8n.pt \
+    --epochs 100 \
+    --imgsz 640 \
+    --batch 16 \
+    --device 0 \
+    --project ../../weights/runs \
+    --name my_model
+```
+
+训练完成后权重位于：
+
+```
+weights/runs/my_model/weights/best.pt
+```
+
+将 `detection.launch.py` 中的 `weights_path` 改为 `best.pt` 路径即可使用自定义模型。
+
+### numpy 版本说明
+
+虚拟环境中 numpy 必须保持 `<2.0`，否则与系统 cv_bridge 冲突：
+
+```bash
+source venv/bin/activate
+pip install "numpy<2.0"
+# 不要安装 pip 版 opencv-python，使用系统 cv2（通过 system-site-packages 继承）
+```
+
+---
 
 ### Gazebo 启动后 PX4 一直 "Waiting for Gazebo world"
 
@@ -339,16 +548,28 @@ ros2 topic echo /tf --once
 ```
 Ego-planner-stystem/
 ├── src/
-│   ├── ego-swarm-ros2/          # EGO-Planner ROS2 移植版本
-│   │   └── ego_planner/         # 核心规划包
+│   ├── ego-swarm-ros2/              # EGO-Planner ROS2 移植版本
+│   │   └── ego_planner/             # 核心规划包
+│   ├── object_decetion/             # YOLOv8 目标检测包
+│   │   ├── launch/
+│   │   │   └── detection.launch.py  # 检测模块启动文件
+│   │   ├── object_decetion/
+│   │   │   ├── detector.py          # YOLOv8 推理封装
+│   │   │   └── detector_node.py     # ROS2 检测节点
+│   │   ├── third_party/
+│   │   │   └── ultralytics/         # YOLOv8 v8.2.0 源码
+│   │   ├── weights/
+│   │   │   └── yolov8n.pt           # 预训练权重
+│   │   ├── datasets/                # 训练数据集目录
+│   │   └── venv/                    # 独立 Python 虚拟环境
 │   └── px4-ego-start/
-│       ├── simulation_start/    # 仿真环境启动包
+│       ├── simulation_start/        # 仿真环境启动包
 │       │   ├── launch/
 │       │   │   └── px4_sitl_ros2.launch.py
 │       │   └── simulation_start/
 │       │       ├── simulation_gazebo.py
 │       │       └── depth_gz_bridge.py
-│       └── px4_offboard_control/ # 飞行控制包
+│       └── px4_offboard_control/    # 飞行控制包
 │           └── px4_offboard_control/
 │               ├── offboard_control_test.py
 │               └── mode_key.py
