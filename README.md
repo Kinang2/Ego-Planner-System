@@ -190,7 +190,7 @@ ros2 launch simulation_start px4_sitl_ros2.launch.py
 ```bash
 # 新终端
 source ~/Ego-planner-stystem/install/setup.bash
-ros2 launch ego_planner single_drone.launch.py
+ros2 launch ego_planner single_uav_gazebo.launch.py
 ```
 
 ### 第四步：启动 Offboard 控制节点
