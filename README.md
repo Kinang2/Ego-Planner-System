@@ -2,7 +2,27 @@
 
 > 基于 ROS2 + PX4 + Gazebo 的无人机自主规划与仿真系统，集成 EGO-Swarm 轨迹规划算法、深度相机感知与 Offboard 飞行控制。
 
+🎥 **演示视频见下方，支持完整自主避障飞行流程**
+
 ---
+
+## 🎬 演示视频
+
+👉 **B站演示（强烈推荐观看）：**  
+[【ego-planner视觉加避障px4+ros2】](https://www.bilibili.com/video/BV1enAnzgErY/?share_source=copy_web&vd_source=5445edc75bd404289e45d33b108b4bd1)
+
+---
+
+## 🔗 项目参考 / 致谢
+
+> 本项目基于 DongnanHu 的工作进行二次开发与系统集成
+
+- 👉 https://github.com/DongnanHu6556/ego-planner-ros2-sim
+- 👉 https://github.com/DongnanHu6556/ego-swarm-ros2
+- 👉 https://github.com/ZJU-FAST-Lab/ego-planner-swarm
+
+---
+
 
 ## 目录
 
